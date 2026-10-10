@@ -13,7 +13,7 @@ Not an official dbt Labs project.
 | | |
 |---|---|
 | dbt parts | [#16274](https://github.com/dbt-labs/dbt/pull/16274) profile schema, [#16365](https://github.com/dbt-labs/dbt/pull/16365) driver wiring, [#16367](https://github.com/dbt-labs/dbt/pull/16367) adapter core, [#16368](https://github.com/dbt-labs/dbt/pull/16368) model configs, [#16369](https://github.com/dbt-labs/dbt/pull/16369) dbt-athena macros, [#16374](https://github.com/dbt-labs/dbt/pull/16374) metadata adapter, [#16376](https://github.com/dbt-labs/dbt/pull/16376) adapter methods, [#16452](https://github.com/dbt-labs/dbt/pull/16452) Hive quoting, [#16370](https://github.com/dbt-labs/dbt/pull/16370) unit tests, [#16375](https://github.com/dbt-labs/dbt/pull/16375) init wizard |
-| driver | [dbt-labs/athena#19](https://github.com/dbt-labs/athena/pull/19) AWS operations, [#20](https://github.com/dbt-labs/athena/pull/20) query statistics and connection options |
+| driver | [dbt-labs/athena#15](https://github.com/dbt-labs/athena/pull/15) more data types and correct timestamps, [#19](https://github.com/dbt-labs/athena/pull/19) AWS operations, [#20](https://github.com/dbt-labs/athena/pull/20) query statistics and connection options |
 
 The tracking issue is [dbt-labs/dbt#16252](https://github.com/dbt-labs/dbt/issues/16252).
 

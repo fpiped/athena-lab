@@ -4,6 +4,7 @@
 # Lake Formation directly. Results go to logs/results.txt; one log per step in logs/.
 set -uo pipefail
 source "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+python3 -c "import boto3" 2>/dev/null || { echo "census.py needs Python 3 with boto3" >&2; exit 1; }
 BIN="$LAB/stack/target/debug/dbt"
 # The static-keys target runs on the current credentials passed as keys.
 if [[ -n ${AWS_PROFILE:-} ]]; then

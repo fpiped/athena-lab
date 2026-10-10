@@ -23,7 +23,7 @@ PARTS=(
   "16376 $DBT"   # Part 6: AthenaAdapter methods through the driver
   "16452 $DBT"   # Part 7: Hive quoting and case folding
 )
-DRIVER_PRS=(19 20)
+DRIVER_PRS=(15 19 20)   # 15: timestamps as microseconds (main fills them with milliseconds)
 
 # fetch_ref <repo dir> <number> <remote url>: prints the ref to merge
 fetch_ref() {
