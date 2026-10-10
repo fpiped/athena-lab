@@ -15,6 +15,7 @@ ecs-e2e/venv/
 ecs-e2e/airflow/
 ecs-e2e/manifest.json
 reference-dbt1/venv/
+venv/
 udf/target/
 __pycache__/
 env.*.sh

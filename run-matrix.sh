@@ -4,7 +4,9 @@
 # Lake Formation directly. Results go to logs/results.txt; one log per step in logs/.
 set -uo pipefail
 source "$(cd "$(dirname "$0")" && pwd)/lib.sh"
-python3 -c "import boto3" 2>/dev/null || { echo "census.py needs Python 3 with boto3" >&2; exit 1; }
+# census.py reads Athena's query history with boto3, from venv/
+[[ -x $LAB/venv/bin/python ]] || { uv venv --no-config -q --python 3.12 "$LAB/venv" &&
+  uv pip install --no-config -q --index-url https://pypi.org/simple --python "$LAB/venv/bin/python" boto3; } || exit 1
 BIN="$LAB/stack/target/debug/dbt"
 # The static-keys target runs on the current credentials passed as keys.
 if [[ -n ${AWS_PROFILE:-} ]]; then
@@ -280,6 +282,6 @@ step non_glue_catalog "fail:LambdaFunction" -- run-operation lab_columns_in --ar
 
 # --- metadata reads: relations, columns and schemas come from Glue; information_schema is read only
 #     by the catalog query of `compile --write-catalog` (athena__get_catalog_relations)
-check metadata_from_glue "information_schema queries since the start: tables columns schemata (catalog apart)" "$(CENSUS_SKIP_CATALOG=$LAB_CATALOG_NON_GLUE python3 "$LAB/census.py" "$WG" "$MATRIX_START" | cut -d' ' -f1-3)" "0 0 0"
+check metadata_from_glue "information_schema queries since the start: tables columns schemata (catalog apart)" "$(CENSUS_SKIP_CATALOG=$LAB_CATALOG_NON_GLUE "$LAB/venv/bin/python" "$LAB/census.py" "$WG" "$MATRIX_START" | cut -d' ' -f1-3)" "0 0 0"
 
 echo; echo "PASS $(grep -c '^PASS' "$RES")  FAIL $(grep -c '^FAIL' "$RES")"

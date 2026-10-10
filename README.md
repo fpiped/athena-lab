@@ -20,7 +20,7 @@ The tracking issue is [dbt-labs/dbt#16252](https://github.com/dbt-labs/dbt/issue
 ## Quick start
 
 Requirements: git, a Rust toolchain (`rustup`; the dbt repository pins the version), Go, `protoc`,
-the AWS CLI v2, `jq`, Python 3 with `boto3`, and an AWS account where you can create Athena work
+the AWS CLI v2, `jq`, Python 3, `uv` (the matrix creates `venv/` with `boto3`), and an AWS account where you can create Athena work
 groups and IAM roles.
 
 ```sh
