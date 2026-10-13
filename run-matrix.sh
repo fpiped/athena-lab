@@ -24,13 +24,22 @@ cd "$LAB/project"
 
 record() { printf '%-4s %-48s %s\n' "$1" "$2" "${3:-}" | tee -a "$RES"; }
 
+# A step expected to pass also fails on a query that failed underneath, unless the failure is one dbt-athena
+# recovers from by design: HIVE_TOO_MANY_OPEN_PARTITIONS makes it insert in batches (partitions_limit).
+EXPECTED_QUERY_ERRORS='HIVE_TOO_MANY_OPEN_PARTITIONS'
+
 # step NAME EXPECT -- dbt args...   EXPECT = ok | fail:<text the error must contain>
 step() {
   local name=$1 expect=$2; shift 3
+  rm -f logs/query_log.sql   # dbt rewrites it on every invocation; a crash must not leave the previous one
   "$BIN" "$@" --profiles-dir "${PROFILES_DIR:-.}" > "$LAB/logs/$name.log" 2>&1; local rc=$?
+  [[ -f logs/query_log.sql ]] && cp logs/query_log.sql "$LAB/logs/$name.query_log.sql"
+  local query_error; query_error=$(grep -h -- '^-- error message:' logs/query_log.sql 2>/dev/null | grep -v -E "$EXPECTED_QUERY_ERRORS" | head -1)
   local summary; summary=$(grep -E '^Summary:' "$LAB/logs/$name.log" | tail -1)
   if [[ $expect == ok ]]; then
-    [[ $rc == 0 ]] && record PASS "$name" "$summary" || record FAIL "$name" "exit $rc; $(grep -m1 -E '\[error\]|panic' "$LAB/logs/$name.log" | cut -c1-160)"
+    if [[ $rc != 0 ]]; then record FAIL "$name" "exit $rc; $(grep -m1 -E '\[error\]|panic' "$LAB/logs/$name.log" | cut -c1-160)"
+    elif [[ -n $query_error ]]; then record FAIL "$name" "query-log error: $(cut -c1-160 <<< "${query_error#-- error message: }")"
+    else record PASS "$name" "$summary"; fi
   else
     local want=${expect#fail:}
     if [[ $rc != 0 ]] && grep -q -- "$want" "$LAB/logs/$name.log"; then record PASS "$name" "failed as expected: $want"; else record FAIL "$name" "exit $rc, expected failure containing '$want'"; fi
@@ -89,6 +98,11 @@ for t in lab_schema_change_struct lab_schema_change_struct_ice; do
 done
 check parts_150 "lab_parts_150 Glue partitions" "$(partitions $DB lab_parts_150)" 150
 check parts_150_rows "lab_parts_150 rows after two runs" "$(athena_scalar "select count(*) from $DB.lab_parts_150")" 150
+check parts_ts "lab_parts_ts Glue partitions after two runs" "$(partitions $DB lab_parts_ts)" 6
+check parts_ts_rows "lab_parts_ts rows / distinct ids after two runs" "$(athena_scalar "select cast(count(*) as varchar) || '/' || cast(count(distinct id) as varchar) from $DB.lab_parts_ts")" "6/6"
+# timestamps read back through run_query, the values the partition filter above is built from
+step timestamp_probe ok -- run-operation lab_timestamp_probe
+check timestamp_values "timestamp and timestamp(6) as run_query reads them" "$(grep -oE 'TS .*' "$LAB/logs/timestamp_probe.log" | head -1)" "TS 2026-01-01 09:30:00 | 2026-01-01 09:30:00"
 check ha_partitions "lab_ha Glue partitions (distinct statuses)" "$(partitions $DB lab_ha)" "$(athena_scalar "select count(distinct status) from $DB.stg_orders")"
 check ice_bucket_rows "lab_ice_bucket rows" "$(athena_scalar "select count(*) from $DB.lab_ice_bucket")" 40
 check ice_bucket_type "lab_ice_bucket table_type" "$(aws glue get-table --database-name $DB --name lab_ice_bucket --query 'Table.Parameters.table_type' --output text)" ICEBERG
@@ -135,12 +149,22 @@ LF_PROFILES="$LAB/logs/profiles-lf"; mkdir -p "$LF_PROFILES"
 sed "s/LAB_LF_TAG_DOMAIN: lab/$LAB_LF_TAG_DOMAIN: lab/" profiles.yml > "$LF_PROFILES/profiles.yml"
 LF_TABLE='{"Table":{"DatabaseName":"'$DB_LF'","Name":"lab_lf_tags"}}'
 LF_FILTER='{"DataCellsFilter":{"TableCatalogId":"'$LAB_ACCOUNT_ID'","DatabaseName":"'$DB_LF'","TableName":"lab_lf_tags","Name":"'$LAB_LF_FILTER'"}}'
+LF_DB='{"Database":{"Name":"'$DB_LF'"}}'
+# "none" when the schema has no tag (the CLI then prints nothing), "error" when the call fails
+lf_db_tags()     { local out; out=$(aws lakeformation get-resource-lf-tags --resource "$LF_DB" --output json) || { echo error; return; }; [[ -z $out ]] && echo none || jq -r '[.LFTagOnDatabase[]? | "\(.TagKey)=\(.TagValues|join(","))"] | join(" ")' <<< "$out"; }
 lf_table_tags()  { aws lakeformation get-resource-lf-tags --resource "$LF_TABLE" --output json | jq -r '[.LFTagsOnTable[] | "\(.TagKey)=\(.TagValues|join(","))"] | sort | join(" ")'; }
 lf_column_tags() { aws lakeformation get-resource-lf-tags --resource "$LF_TABLE" --output json | jq -r '[.LFTagsOnColumns[]? | .Name as $c | .LFTags[] | select(.TagKey == "'$LAB_LF_TAG_PII'") | "\($c):\(.TagKey)=\(.TagValues|join(","))"] | join(" ")'; }
 lf_filter()      { aws lakeformation list-data-cells-filter --table '{"CatalogId":"'$LAB_ACCOUNT_ID'","DatabaseName":"'$DB_LF'","Name":"lab_lf_tags"}' --output json | jq -r '[.DataCellsFilters[] | "\(.Name):\(.RowFilter.FilterExpression)"] | join(" ")'; }
 lf_grantees()    { aws lakeformation list-permissions --resource "$LF_FILTER" --output json | jq -r '[.PrincipalResourcePermissions[] | .Principal.DataLakePrincipalIdentifier | split("/") | last] | join(" ")'; }
 PROFILES_DIR=$LF_PROFILES step lf_database_tags ok -- run --select lab_default_naming --target dev_lf_db
-check lf_database "schema LF-Tags" "$(aws lakeformation get-resource-lf-tags --resource '{"Database":{"Name":"'$DB_LF'"}}' --output json | jq -r '[.LFTagOnDatabase[] | "\(.TagKey)=\(.TagValues|join(","))"] | join(" ")')" "$LAB_LF_TAG_DOMAIN=lab"
+check lf_database "schema LF-Tags" "$(lf_db_tags)" "$LAB_LF_TAG_DOMAIN=lab"
+# a second run on the existing schema leaves its tags alone, as dbt-athena does: create_schema (which
+# applies lf_tags_database) runs only for schemas list_schemas does not find. The tag is removed by hand
+# first, so a run that reapplies it shows; it is put back for the table checks, which inherit it.
+aws lakeformation remove-lf-tags-from-resource --resource "$LF_DB" --lf-tags "TagKey=$LAB_LF_TAG_DOMAIN,TagValues=lab" > /dev/null
+PROFILES_DIR=$LF_PROFILES step lf_database_rerun ok -- run --select lab_default_naming --target dev_lf_db
+check lf_database_kept "schema LF-Tags after a second run, removed by hand before it" "$(lf_db_tags)" "none"
+aws lakeformation add-lf-tags-to-resource --resource "$LF_DB" --lf-tags "TagKey=$LAB_LF_TAG_DOMAIN,TagValues=lab" > /dev/null
 PROFILES_DIR=$LF_PROFILES step lf_v1 ok -- run --select lab_lf_tags --target dev_lf_db --vars '{lab_lf: true}'
 check lf_v1_table "lab_lf_tags table tags (domain inherited)" "$(lf_table_tags)" "$LAB_LF_TAG_DOMAIN=lab $LAB_LF_TAG_TIER=lab"
 check lf_v1_columns "lab_lf_tags column tags" "$(lf_column_tags)" "email:$LAB_LF_TAG_PII=true"

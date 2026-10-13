@@ -43,16 +43,18 @@ the parts before pushing it, point that part at it: `LAB_REF_16376=my-branch ./r
   refusal), explicit endpoint, polling interval.
 - **Materializations**: seeds (CSV upload, `seed_by_insert`, SSE upload arguments), views, tables
   (Hive and Iceberg, `ha` swaps), incremental (append, insert_overwrite with partitions, Iceberg merge,
-  microbatch, 150-partition batching, `partitions_limit`), snapshots, `on_schema_change` including
+  microbatch, 150-partition batching, `partitions_limit`, partitions on a timestamp column), snapshots, `on_schema_change` including
   struct columns, `persist_docs` to Glue, view version expiry, temporary tables left behind.
 - **Metadata**: relations, columns and schemas read from Glue as dbt-athena reads them; column types
   compared line by line with dbt-core 1.11 + dbt-athena 1.11 (`project/expected/`); dropped Iceberg
   columns; mixed-case names; `dbt_utils.union_relations`; a Glue catalog registered in Athena and a
   catalog outside Glue; no `information_schema` query outside the catalog query of `compile --write-catalog`.
 - **Runtime**: the adapter response in `run_results.json`, Iceberg commit conflicts rerun, Ctrl-C
-  stopping the running query, `dbt retry`, tests, source freshness, docs.
+  stopping the running query, `dbt retry`, tests, source freshness, docs, timestamp values as macros read
+  them. A step that exits 0 still fails on a failed query in its `logs/query_log.sql`, except the ones
+  dbt-athena recovers from by design (`EXPECTED_QUERY_ERRORS` in `run-matrix.sh`).
 - **Optional sections** (`env.sh`): Python models on an Athena Spark work group (including timeout and
-  Ctrl-C), Lake Formation tags and data cell filters, `catalogs.yml` v2 with S3 Tables, Athena UDFs.
+  Ctrl-C), Lake Formation tags (left alone on a second run over an existing schema) and data cell filters, `catalogs.yml` v2 with S3 Tables, Athena UDFs.
 
 ## Other runs
 
