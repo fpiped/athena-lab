@@ -34,9 +34,10 @@ setup/setup.sh                # work groups, roles and the rest, named from the 
 setup/teardown.sh             # removes what setup.sh and the matrix created
 ```
 
-With an IAM Identity Center (SSO) profile, export its credentials before a run: once the cached SSO
-token has expired, the Athena driver stalls for minutes on each call (a three-model compile took 17
-minutes instead of one second), while the AWS CLI keeps refreshing normally.
+With an IAM Identity Center (SSO) profile, export its credentials before a run. Runs on the profile
+have stalled for minutes on each call (a three-model compile took 17 minutes, one second with the same
+credentials exported), while the AWS CLI kept working; the cause is not known (an expired SSO token is
+refreshed normally).
 
 ```bash
 eval "$(aws configure export-credentials --profile <profile> --format env)"
