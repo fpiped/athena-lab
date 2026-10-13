@@ -23,8 +23,9 @@ PARTS=(
   "16376 $DBT"   # Part 6: AthenaAdapter methods through the driver
   "16452 $DBT"   # Part 7: Hive quoting and case folding
 )
-# 15: timestamps as microseconds (main fills them with milliseconds). LAB_DRIVER_PRS="19 20" leaves one out.
-DRIVER_PRS=(${LAB_DRIVER_PRS:-15 19 20})
+# 15: timestamps as microseconds (main fills them with milliseconds); 21: cancellation during a status call;
+# 22: query statistics. LAB_DRIVER_PRS="19 20" leaves the others out.
+DRIVER_PRS=(${LAB_DRIVER_PRS:-15 19 20 21 22})
 
 # fetch_ref <repo dir> <number> <remote url>: prints the ref to merge
 fetch_ref() {
@@ -92,16 +93,49 @@ git -C "$LAB/stack" -c commit.gpgsign=false commit -q -am "bench patch: 16374 li
 if grep -rn --include='*.rs' 'todo!("Athena")' "$LAB/stack/crates" >/dev/null; then echo "todo!(Athena) left"; exit 1; fi
 if grep -rln '^<<<<<<< ' "$LAB/stack/crates" >/dev/null; then echo "conflict markers left"; exit 1; fi
 
+resolve_driver() {  # conflicts between the driver PRs, resolved the same way each time
+  python3 - <<'PY'
+import re, subprocess, sys, pathlib
+files = subprocess.run(["git", "diff", "--name-only", "--diff-filter=U"], capture_output=True, text=True).stdout.split()
+block = re.compile(r"<<<<<<< [^\n]*\n(.*?)=======\n(.*?)>>>>>>> [^\n]*\n", re.S)
+def statement(m):
+    ours, theirs = m.group(1), m.group(2)
+    # 21 moves the stop into stopQuery, 22 makes waitForQuery also return the execution
+    if ours.strip() == "return s.stopQuery(ctx, execID)" and "StopQueryExecution" in theirs:
+        return "\t\t\treturn nil, s.stopQuery(ctx, execID)\n"
+    if "if ctx.Err() != nil" in ours and theirs.strip() == "return nil, adbc.Error{":
+        return ours.replace("return s.stopQuery(ctx, execID)", "return nil, s.stopQuery(ctx, execID)").replace("\t\t\treturn adbc.Error{", "\t\t\treturn nil, adbc.Error{")
+    # 20 adds the poll interval constant above waitForQuery, whose signature 22 changes
+    if "const defaultPollInterval" in ours + theirs and "(*types.QueryExecution, error)" in ours + theirs:
+        const = re.search(r"// defaultPollInterval.*?const defaultPollInterval = [^\n]*\n\n", ours + theirs, re.S).group(0)
+        new = re.search(r"// waitForQuery polls.*?\(\*types.QueryExecution, error\) \{\n", ours + theirs, re.S).group(0)
+        return const + new
+    sys.exit("unhandled statement.go conflict")
+for f in files:
+    p = pathlib.Path(f)
+    if f in ("go/go.mod", "go/go.sum", "README.md"):
+        # go.mod: the side merged first already requires the newer SDK versions
+        subprocess.run(["git", "checkout", "--ours", "--", f], check=True)
+    elif f == "go/athena_database.go":
+        p.write_text(block.sub(lambda m: m.group(1) + m.group(2), p.read_text()))  # both test hooks
+    elif f == "go/driver_test.go":
+        # 20 and 22 each add an integration test at the same place: keep both
+        p.write_text(block.sub(lambda m: m.group(1) + "}\n\n" + m.group(2), p.read_text()))
+    elif f == "go/statement.go":
+        p.write_text(block.sub(statement, p.read_text()))
+    else:
+        sys.exit(f"unhandled driver conflict in {f}")
+    subprocess.run(["git", "add", f], check=True)
+PY
+  git -c commit.gpgsign=false commit -q --no-edit
+}
+
 git -C "$ATHENA_DRIVER_REPO" fetch -q origin main
 reset_worktree "$ATHENA_DRIVER_REPO" "$LAB/driver" lab-driver origin/main
 for n in "${DRIVER_PRS[@]}"; do
   ref=$(fetch_ref "$ATHENA_DRIVER_REPO" "$n" "$DRIVER")
   if ! git -C "$LAB/driver" -c commit.gpgsign=false merge -q --no-edit "$ref" >/dev/null 2>&1; then
-    # Both PRs add AWS SDK modules; the side merged first already requires the newer versions.
-    conflicts=$(git -C "$LAB/driver" diff --name-only --diff-filter=U | tr '\n' ' ')
-    [[ $conflicts == "go/go.mod " || $conflicts == "go/go.mod go/go.sum " ]] || { echo "unhandled driver conflict: $conflicts"; exit 1; }
-    git -C "$LAB/driver" checkout --ours -- $conflicts && git -C "$LAB/driver" add $conflicts
-    git -C "$LAB/driver" -c commit.gpgsign=false commit -q --no-edit
+    (cd "$LAB/driver" && resolve_driver)
   fi
   echo "merged driver $n ($ref)"
 done
