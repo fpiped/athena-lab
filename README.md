@@ -34,6 +34,14 @@ setup/setup.sh                # work groups, roles and the rest, named from the 
 setup/teardown.sh             # removes what setup.sh and the matrix created
 ```
 
+With an IAM Identity Center (SSO) profile, export its credentials before a run: once the cached SSO
+token has expired, the Athena driver stalls for minutes on each call (a three-model compile took 17
+minutes instead of one second), while the AWS CLI keeps refreshing normally.
+
+```bash
+eval "$(aws configure export-credentials --profile <profile> --format env)"
+```
+
 The scripts refuse to run against an account other than `LAB_ACCOUNT_ID`. To test a branch of one of
 the parts before pushing it, point that part at it: `LAB_REF_16376=my-branch ./rebuild-stack.sh`.
 
