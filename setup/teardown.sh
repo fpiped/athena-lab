@@ -11,7 +11,7 @@ read -r -p "Delete the $LAB_PREFIX resources in account $LAB_ACCOUNT_ID? [y/N] "
 for db in $(aws glue get-databases --query "DatabaseList[?starts_with(Name, '$LAB_SCHEMA')].Name" --output text); do
   aws glue delete-database --name "$db" && say "database $db deleted"
 done
-for sub in athena-results athena-results-open spark-results lab-open-data lab-catalog-lake udf; do
+for sub in athena-results athena-results-open spark-results lab-open-data lab-catalog-lake udf quirks; do
   aws s3 rm --recursive --quiet "$LAB_S3_ROOT/$sub/" && say "$LAB_S3_ROOT/$sub/ emptied"
 done
 

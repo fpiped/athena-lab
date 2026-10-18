@@ -9,9 +9,9 @@ Not an official AWS or dbt Labs project.
 | Bench | What it tests |
 |---|---|
 | [`dbt2/`](dbt2/README.md) | the AWS Athena adapter of dbt 2 and its ADBC driver, assembled from open pull requests |
+| [`quirks/`](quirks/README.md) | one rerunnable reproduction per Athena engine quirk, each printing its verdict |
 
-This repository replaces [fpiped/dbt2-athena-lab](https://github.com/fpiped/dbt2-athena-lab), whose
-history it carries.
+Formerly `fpiped/dbt2-athena-lab`, when it held only the dbt 2 bench.
 
 ## Quick start
 
