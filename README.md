@@ -34,6 +34,17 @@ setup/setup.sh                # work groups, roles and the rest, named from the 
 setup/teardown.sh             # removes what setup.sh and the matrix created
 ```
 
+## Local files
+
+Keep account settings in the ignored `env.sh` (or another ignored `env.*.sh`).
+Private notes, experiments and historical material belong in the ignored `.local/`
+directory. Keep reusable scripts and tests in this repository rather than maintaining
+a second bench.
+
+`stack/` and `driver/` are ignored build worktrees. They can also be symlinks to
+worktrees outside this checkout. Logs, generated models and build outputs are
+ignored separately.
+
 With an IAM Identity Center (SSO) profile, export its credentials before a run. Runs on the profile
 have stalled for minutes on each call (a three-model compile took 17 minutes, one second with the same
 credentials exported), while the AWS CLI kept working; the cause is not known (an expired SSO token is
