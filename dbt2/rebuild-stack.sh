@@ -5,7 +5,7 @@
 # instead, e.g. LAB_REF_16376=my-branch to test commits not pushed yet.
 # Conflicts between parts are resolved the same way each time (resolve()).
 set -euo pipefail
-source "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+source "$(cd "$(dirname "$0")/.." && pwd)/lib.sh"
 BASE=${BASE:-origin/main}   # a pinned main commit keeps a comparison against an earlier run fair
 
 DBT=https://github.com/dbt-labs/dbt.git
@@ -78,20 +78,20 @@ PY
 }
 
 git -C "$DBT_REPO" fetch -q origin main
-reset_worktree "$DBT_REPO" "$LAB/stack" lab-stack "$BASE"
+reset_worktree "$DBT_REPO" "$DBT2/stack" lab-stack "$BASE"
 for entry in "${PARTS[@]}"; do
   read -r n url <<< "$entry"
   ref=$(fetch_ref "$DBT_REPO" "$n" "$url")
-  if ! git -C "$LAB/stack" -c commit.gpgsign=false merge -q --no-edit "$ref" >/dev/null 2>&1; then (cd "$LAB/stack" && resolve "$n"); fi
+  if ! git -C "$DBT2/stack" -c commit.gpgsign=false merge -q --no-edit "$ref" >/dev/null 2>&1; then (cd "$DBT2/stack" && resolve "$n"); fi
   echo "merged $n ($ref)"
 done
 # Bench patch for a part that no longer compiles against main; drop it once the part is rebased.
 # 16374 (Part 5): main added `state: Option<&State>` to `list_relations`; the other adapters pass None.
 sed -i.bak 's/adapter.list_relations(&query_ctx, conn, db_schema, token_clone.clone())/adapter.list_relations(None, \&query_ctx, conn, db_schema, token_clone.clone())/' \
-  "$LAB/stack/crates/dbt-adapter/src/metadata/athena/mod.rs" && rm -f "$LAB/stack/crates/dbt-adapter/src/metadata/athena/mod.rs.bak"
-git -C "$LAB/stack" -c commit.gpgsign=false commit -q -am "bench patch: 16374 list_relations takes state" || true
-if grep -rn --include='*.rs' 'todo!("Athena")' "$LAB/stack/crates" >/dev/null; then echo "todo!(Athena) left"; exit 1; fi
-if grep -rln '^<<<<<<< ' "$LAB/stack/crates" >/dev/null; then echo "conflict markers left"; exit 1; fi
+  "$DBT2/stack/crates/dbt-adapter/src/metadata/athena/mod.rs" && rm -f "$DBT2/stack/crates/dbt-adapter/src/metadata/athena/mod.rs.bak"
+git -C "$DBT2/stack" -c commit.gpgsign=false commit -q -am "bench patch: 16374 list_relations takes state" || true
+if grep -rn --include='*.rs' 'todo!("Athena")' "$DBT2/stack/crates" >/dev/null; then echo "todo!(Athena) left"; exit 1; fi
+if grep -rln '^<<<<<<< ' "$DBT2/stack/crates" >/dev/null; then echo "conflict markers left"; exit 1; fi
 
 resolve_driver() {  # conflicts between the driver PRs, resolved the same way each time
   python3 - <<'PY'
@@ -131,12 +131,12 @@ PY
 }
 
 git -C "$ATHENA_DRIVER_REPO" fetch -q origin main
-reset_worktree "$ATHENA_DRIVER_REPO" "$LAB/driver" lab-driver origin/main
+reset_worktree "$ATHENA_DRIVER_REPO" "$DBT2/driver" lab-driver origin/main
 for n in "${DRIVER_PRS[@]}"; do
   ref=$(fetch_ref "$ATHENA_DRIVER_REPO" "$n" "$DRIVER")
-  if ! git -C "$LAB/driver" -c commit.gpgsign=false merge -q --no-edit "$ref" >/dev/null 2>&1; then
-    (cd "$LAB/driver" && resolve_driver)
+  if ! git -C "$DBT2/driver" -c commit.gpgsign=false merge -q --no-edit "$ref" >/dev/null 2>&1; then
+    (cd "$DBT2/driver" && resolve_driver)
   fi
   echo "merged driver $n ($ref)"
 done
-git -C "$LAB/stack" log --oneline -1
+git -C "$DBT2/stack" log --oneline -1

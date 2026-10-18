@@ -1,0 +1,71 @@
+# dbt 2 Athena adapter bench
+
+A test bench for the AWS Athena adapter of dbt 2 (the Rust engine, [dbt-labs/dbt](https://github.com/dbt-labs/dbt)).
+The adapter is being contributed as a series of pull requests that are not merged yet; this bench
+assembles them on dbt's `main`, builds dbt with the Athena ADBC driver, and runs a matrix of checks
+against a real AWS account. Each check reads the result back from Glue, S3, Lake Formation or Athena
+rather than trusting an exit code.
+
+Account setup, `env.sh` and teardown are the lab's: see the [lab README](../README.md).
+
+## What gets assembled
+
+| | |
+|---|---|
+| dbt parts | [#16274](https://github.com/dbt-labs/dbt/pull/16274) profile schema, [#16365](https://github.com/dbt-labs/dbt/pull/16365) driver wiring, [#16367](https://github.com/dbt-labs/dbt/pull/16367) adapter core, [#16368](https://github.com/dbt-labs/dbt/pull/16368) model configs, [#16369](https://github.com/dbt-labs/dbt/pull/16369) dbt-athena macros, [#16374](https://github.com/dbt-labs/dbt/pull/16374) metadata adapter, [#16376](https://github.com/dbt-labs/dbt/pull/16376) adapter methods, [#16452](https://github.com/dbt-labs/dbt/pull/16452) Hive quoting, [#16370](https://github.com/dbt-labs/dbt/pull/16370) unit tests, [#16375](https://github.com/dbt-labs/dbt/pull/16375) init wizard |
+| driver | [dbt-labs/athena#15](https://github.com/dbt-labs/athena/pull/15) more data types and correct timestamps, [#19](https://github.com/dbt-labs/athena/pull/19) AWS operations, [#20](https://github.com/dbt-labs/athena/pull/20) connection options, [#21](https://github.com/dbt-labs/athena/pull/21) cancellation during a status call, [#22](https://github.com/dbt-labs/athena/pull/22) query statistics |
+
+The tracking issue is [dbt-labs/dbt#16252](https://github.com/dbt-labs/dbt/issues/16252).
+
+## Quick start
+
+Requirements, on top of the lab's: a Rust toolchain (`rustup`; the dbt repository pins the version),
+Go, `protoc` and `uv` (the matrix creates `venv/` with `boto3`).
+
+```sh
+git clone https://github.com/dbt-labs/dbt ~/src/dbt
+git clone https://github.com/dbt-labs/athena ~/src/athena
+# env.sh: DBT_REPO and ATHENA_DRIVER_REPO point at the clones
+dbt2/rebuild-stack.sh         # stack/ = dbt main + the parts, driver/ = athena main + its PRs
+dbt2/build.sh                 # debug dbt binary with the driver next to it
+dbt2/run-matrix.sh            # dbt2/logs/results.txt, one log per step
+```
+
+`stack/` and `driver/` are ignored build worktrees under `dbt2/`. They can also be symlinks to
+worktrees outside this checkout. Logs, generated models and build outputs are ignored separately.
+
+To test a branch of one of the parts before pushing it, point that part at it:
+`LAB_REF_16376=my-branch dbt2/rebuild-stack.sh`.
+
+## What the matrix covers
+
+- **Credentials**: default chain, named profile, static keys, assume role with an external ID (and its
+  refusal), explicit endpoint, polling interval.
+- **Materializations**: seeds (CSV upload, `seed_by_insert`, SSE upload arguments), views, tables
+  (Hive and Iceberg, `ha` swaps), incremental (append, insert_overwrite with partitions, Iceberg merge,
+  microbatch, 150-partition batching, `partitions_limit`, partitions on a timestamp column), snapshots, `on_schema_change` including
+  struct columns, `persist_docs` to Glue, view version expiry, temporary tables left behind.
+- **Metadata**: relations, columns and schemas read from Glue as dbt-athena reads them; column types
+  compared line by line with dbt-core 1.11 + dbt-athena 1.11 (`project/expected/`); dropped Iceberg
+  columns; mixed-case names; `dbt_utils.union_relations`; a Glue catalog registered in Athena and a
+  catalog outside Glue; no `information_schema` query outside the catalog query of `compile --write-catalog`.
+- **Runtime**: the adapter response in `run_results.json`, Iceberg commit conflicts rerun, Ctrl-C
+  stopping the running query, `dbt retry`, tests, source freshness, docs, timestamp values as macros read
+  them. A step that exits 0 still fails on a failed query in its `logs/query_log.sql`, except the ones
+  dbt-athena recovers from by design (`EXPECTED_QUERY_ERRORS` in `run-matrix.sh`).
+- **Optional sections** (`env.sh`): Python models on an Athena Spark work group (including timeout and
+  Ctrl-C), Lake Formation tags (left alone on a second run over an existing schema) and data cell filters, `catalogs.yml` v2 with S3 Tables, Athena UDFs.
+
+## Other runs
+
+- `run-scale.sh`: 250 generated models and 250 tests on 16 threads, twice.
+- `reference-dbt1/`: dbt-core 1.11 + dbt-athena 1.11 on the same tables, to regenerate the reference.
+- `linux/`: a linux/arm64 release build of the stack and the driver, and an image to run it on ECS.
+- `ecs-e2e/`: an Airflow DAG running the image through Astronomer Cosmos `ExecutionMode.WATCHER_AWS_ECS`
+  ([astronomer/astronomer-cosmos#3000](https://github.com/astronomer/astronomer-cosmos/pull/3000)), on
+  a Fargate cluster of your own.
+
+## Cost
+
+Athena queries of the matrix scan kilobytes. The Spark section starts Athena Spark sessions, which are
+billed by DPU-hour while they run; the S3 Tables and Lake Formation sections create no running resources.

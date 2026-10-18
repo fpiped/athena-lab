@@ -2,6 +2,7 @@
 # checks the account. The LAB_* variables are exported because the dbt projects read them with env_var().
 
 LAB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DBT2="$LAB/dbt2"
 LAB_ENV=${LAB_ENV:-$LAB/env.sh}
 if [[ ! -f $LAB_ENV ]]; then
   echo "$LAB_ENV is missing: copy env.example.sh to env.sh and fill it in" >&2

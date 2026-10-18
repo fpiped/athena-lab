@@ -3,11 +3,11 @@
 # Each step checks its exit code against an expectation, and the checks read Glue / S3 / Athena /
 # Lake Formation directly. Results go to logs/results.txt; one log per step in logs/.
 set -uo pipefail
-source "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+source "$(cd "$(dirname "$0")/.." && pwd)/lib.sh"
 # census.py reads Athena's query history with boto3, from venv/
-[[ -x $LAB/venv/bin/python ]] || { uv venv --no-config -q --python 3.12 "$LAB/venv" &&
-  uv pip install --no-config -q --index-url https://pypi.org/simple --python "$LAB/venv/bin/python" boto3; } || exit 1
-BIN="$LAB/stack/target/debug/dbt"
+[[ -x $DBT2/venv/bin/python ]] || { uv venv --no-config -q --python 3.12 "$DBT2/venv" &&
+  uv pip install --no-config -q --index-url https://pypi.org/simple --python "$DBT2/venv/bin/python" boto3; } || exit 1
+BIN="$DBT2/stack/target/debug/dbt"
 # The static-keys target runs on the current credentials passed as keys.
 if [[ -n ${AWS_PROFILE:-} ]]; then
   eval "$(aws configure export-credentials --profile "$AWS_PROFILE" --format env | sed 's/^export AWS_/export LAB_AWS_/')"
@@ -18,9 +18,9 @@ DB=$LAB_SCHEMA
 DB_OPEN=$LAB_SCHEMA_OPEN
 WG=$LAB_WORK_GROUP
 on() { [[ ${!1} == 1 ]]; }   # on LAB_SPARK: is the optional section enabled
-mkdir -p "$LAB/logs"; RES="$LAB/logs/results.txt"; : > "$RES"
+mkdir -p "$DBT2/logs"; RES="$DBT2/logs/results.txt"; : > "$RES"
 MATRIX_START=$(date -u +%s)
-cd "$LAB/project"
+cd "$DBT2/project"
 
 record() { printf '%-4s %-48s %s\n' "$1" "$2" "${3:-}" | tee -a "$RES"; }
 
@@ -32,17 +32,17 @@ EXPECTED_QUERY_ERRORS='HIVE_TOO_MANY_OPEN_PARTITIONS'
 step() {
   local name=$1 expect=$2; shift 3
   rm -f logs/query_log.sql   # dbt rewrites it on every invocation; a crash must not leave the previous one
-  "$BIN" "$@" --profiles-dir "${PROFILES_DIR:-.}" > "$LAB/logs/$name.log" 2>&1; local rc=$?
-  [[ -f logs/query_log.sql ]] && cp logs/query_log.sql "$LAB/logs/$name.query_log.sql"
+  "$BIN" "$@" --profiles-dir "${PROFILES_DIR:-.}" > "$DBT2/logs/$name.log" 2>&1; local rc=$?
+  [[ -f logs/query_log.sql ]] && cp logs/query_log.sql "$DBT2/logs/$name.query_log.sql"
   local query_error; query_error=$(grep -h -- '^-- error message:' logs/query_log.sql 2>/dev/null | grep -v -E "$EXPECTED_QUERY_ERRORS" | head -1)
-  local summary; summary=$(grep -E '^Summary:' "$LAB/logs/$name.log" | tail -1)
+  local summary; summary=$(grep -E '^Summary:' "$DBT2/logs/$name.log" | tail -1)
   if [[ $expect == ok ]]; then
-    if [[ $rc != 0 ]]; then record FAIL "$name" "exit $rc; $(grep -m1 -E '\[error\]|panic' "$LAB/logs/$name.log" | cut -c1-160)"
+    if [[ $rc != 0 ]]; then record FAIL "$name" "exit $rc; $(grep -m1 -E '\[error\]|panic' "$DBT2/logs/$name.log" | cut -c1-160)"
     elif [[ -n $query_error ]]; then record FAIL "$name" "query-log error: $(cut -c1-160 <<< "${query_error#-- error message: }")"
     else record PASS "$name" "$summary"; fi
   else
     local want=${expect#fail:}
-    if [[ $rc != 0 ]] && grep -q -- "$want" "$LAB/logs/$name.log"; then record PASS "$name" "failed as expected: $want"; else record FAIL "$name" "exit $rc, expected failure containing '$want'"; fi
+    if [[ $rc != 0 ]] && grep -q -- "$want" "$DBT2/logs/$name.log"; then record PASS "$name" "failed as expected: $want"; else record FAIL "$name" "exit $rc, expected failure containing '$want'"; fi
   fi
 }
 
@@ -102,7 +102,7 @@ check parts_ts "lab_parts_ts Glue partitions after two runs" "$(partitions $DB l
 check parts_ts_rows "lab_parts_ts rows / distinct ids after two runs" "$(athena_scalar "select cast(count(*) as varchar) || '/' || cast(count(distinct id) as varchar) from $DB.lab_parts_ts")" "6/6"
 # timestamps read back through run_query, the values the partition filter above is built from
 step timestamp_probe ok -- run-operation lab_timestamp_probe
-check timestamp_values "timestamp and timestamp(6) as run_query reads them" "$(grep -oE 'TS .*' "$LAB/logs/timestamp_probe.log" | head -1)" "TS 2026-01-01 09:30:00 | 2026-01-01 09:30:00"
+check timestamp_values "timestamp and timestamp(6) as run_query reads them" "$(grep -oE 'TS .*' "$DBT2/logs/timestamp_probe.log" | head -1)" "TS 2026-01-01 09:30:00 | 2026-01-01 09:30:00"
 check ha_partitions "lab_ha Glue partitions (distinct statuses)" "$(partitions $DB lab_ha)" "$(athena_scalar "select count(distinct status) from $DB.stg_orders")"
 check ice_bucket_rows "lab_ice_bucket rows" "$(athena_scalar "select count(*) from $DB.lab_ice_bucket")" 40
 check ice_bucket_type "lab_ice_bucket table_type" "$(aws glue get-table --database-name $DB --name lab_ice_bucket --query 'Table.Parameters.table_type' --output text)" ICEBERG
@@ -145,7 +145,7 @@ if on LAB_LAKE_FORMATION; then
 DB_LF=$LAB_SCHEMA_LF   # created by the run, so create_schema tags it
 aws glue delete-database --name "$DB_LF" 2>/dev/null
 # the profile's schema tag key, which dbt does not render from env_var()
-LF_PROFILES="$LAB/logs/profiles-lf"; mkdir -p "$LF_PROFILES"
+LF_PROFILES="$DBT2/logs/profiles-lf"; mkdir -p "$LF_PROFILES"
 sed "s/LAB_LF_TAG_DOMAIN: lab/$LAB_LF_TAG_DOMAIN: lab/" profiles.yml > "$LF_PROFILES/profiles.yml"
 LF_TABLE='{"Table":{"DatabaseName":"'$DB_LF'","Name":"lab_lf_tags"}}'
 LF_FILTER='{"DataCellsFilter":{"TableCatalogId":"'$LAB_ACCOUNT_ID'","DatabaseName":"'$DB_LF'","TableName":"lab_lf_tags","Name":"'$LAB_LF_FILTER'"}}'
@@ -183,7 +183,7 @@ TB_ARN=arn:aws:s3tables:$AWS_REGION:$LAB_ACCOUNT_ID:bucket/$LAB_TABLE_BUCKET
 S3T='"s3tablescatalog/'$LAB_TABLE_BUCKET'".'$DB
 CATALOG_MODELS=$(on LAB_S3_TABLES && echo "lab_cat_glue lab_cat_s3t lab_cat_s3t_incremental" || echo lab_cat_glue)
 on LAB_S3_TABLES && for t in lab_cat_s3t lab_cat_s3t_incremental; do aws s3tables delete-table --table-bucket-arn $TB_ARN --namespace $DB --name $t 2>/dev/null; done
-( cd "$LAB/project-catalogs" && step catalogs_1 ok -- run --select $CATALOG_MODELS && step catalogs_2 ok -- run --select $CATALOG_MODELS )
+( cd "$DBT2/project-catalogs" && step catalogs_1 ok -- run --select $CATALOG_MODELS && step catalogs_2 ok -- run --select $CATALOG_MODELS )
 check catalog_glue "lab_cat_glue table_type / location under external_volume" "$(aws glue get-table --database-name $DB --name lab_cat_glue --output json | jq -r '.Table | "\(.Parameters.table_type) \(.StorageDescriptor.Location | startswith("'$LAB_S3_ROOT'/lab-catalog-lake/'$DB'/lab_cat_glue/"))"')" "ICEBERG true"
 if on LAB_S3_TABLES; then
 check catalog_s3t_tables "S3 Tables tables in the namespace" "$(aws s3tables list-tables --table-bucket-arn $TB_ARN --namespace $DB --output json | jq -r '[.tables[].name] | sort | join(" ")')" "lab_cat_s3t lab_cat_s3t_incremental"
@@ -195,9 +195,9 @@ fi
 #     ICEBERG_COMMIT_ERROR (num_iceberg_retries 3 by default), the control target has no reruns
 conflicts() {  # $1 target: prints "<failed runs> <ICEBERG_COMMIT_ERROR queries in the work group since the setup>"
   local since; since=$(date -u +%s)
-  "$BIN" run-operation lab_iceberg_conflict_setup --target "$1" --profiles-dir . > "$LAB/logs/conflict_setup_$1.log" 2>&1
+  "$BIN" run-operation lab_iceberg_conflict_setup --target "$1" --profiles-dir . > "$DBT2/logs/conflict_setup_$1.log" 2>&1
   local pids="" failed=0
-  for n in 1 2 3 4 5 6; do "$BIN" run-operation lab_iceberg_conflict_update --args "{n: $n}" --target "$1" --profiles-dir . > "$LAB/logs/conflict_$1_$n.log" 2>&1 & pids="$pids $!"; done
+  for n in 1 2 3 4 5 6; do "$BIN" run-operation lab_iceberg_conflict_update --args "{n: $n}" --target "$1" --profiles-dir . > "$DBT2/logs/conflict_$1_$n.log" 2>&1 & pids="$pids $!"; done
   for pid in $pids; do wait $pid || failed=$((failed + 1)); done
   local ids; ids=$(aws athena list-query-executions --work-group "$WG" --max-results 50 --query 'QueryExecutionIds' --output text)
   # TZ=UTC: the CLI prints timestamps in the local offset
@@ -230,7 +230,7 @@ calc_stopped() {  # waits up to a minute for the calculation and its session to 
 }
 step python_timeout "fail:did not complete within 20 seconds" -- run --select lab_py_timeout --vars '{lab_python: true}'
 check python_timeout_stopped "lab_py_timeout calculation / session after the timeout" "$(calc_stopped 'lab_py_timeout: longer')" "CANCELED TERMINATED"
-( "$BIN" run --select lab_py_sleep --vars '{lab_python: true}' --profiles-dir . > "$LAB/logs/python_ctrl_c.log" 2>&1 & pid=$!; sleep 45; kill -INT $pid; wait $pid ) 2>/dev/null
+( "$BIN" run --select lab_py_sleep --vars '{lab_python: true}' --profiles-dir . > "$DBT2/logs/python_ctrl_c.log" 2>&1 & pid=$!; sleep 45; kill -INT $pid; wait $pid ) 2>/dev/null
 sleep 10
 check python_ctrl_c "lab_py_sleep calculation / session after SIGINT" "$(calc_stopped 'lab_py_sleep: cancelled')" "CANCELED TERMINATED"
 fi
@@ -265,7 +265,7 @@ fi
 step skip_wg_check "fail:enforces a centralized output location" -- run --select lab_default_naming --target skip_wg_check
 
 # --- Ctrl-C: the running Athena query is stopped, not left to finish
-( "$BIN" run --select lab_slow --vars '{lab_negative: true}' --profiles-dir . > "$LAB/logs/ctrl_c.log" 2>&1 & pid=$!; sleep 25; kill -INT $pid; wait $pid ) 2>/dev/null
+( "$BIN" run --select lab_slow --vars '{lab_negative: true}' --profiles-dir . > "$DBT2/logs/ctrl_c.log" 2>&1 & pid=$!; sleep 25; kill -INT $pid; wait $pid ) 2>/dev/null
 slow_state() {
   local ids; ids=$(aws athena list-query-executions --work-group "$WG" --max-results 25 --query 'QueryExecutionIds' --output text)
   aws athena batch-get-query-execution --query-execution-ids $ids --output json |
@@ -288,24 +288,24 @@ check default_naming "lab_default_naming location is schema/table/uuid" "$(aws g
 #     union_relations casts, a Glue catalog registered in Athena and a catalog outside Glue
 step types_build ok -- run --select lab_types lab_types_ice
 step types_probe ok -- run-operation lab_column_types --args '{names: [lab_types, lab_types_ice]}'
-check column_types_as_dbt1 "lines differing from dbt-athena 1.11" "$(grep -oE '(COL [^ ]+ [^ ]+ dtype=.* is_string=[A-Za-z]+|CAST-OK [a-z_]+)' "$LAB/logs/types_probe.log" | sed 's/is_string=True/is_string=true/; s/is_string=False/is_string=false/' | diff - "$LAB/project/expected/column_types_dbt1.txt" | grep -c '^[<>]')" 0
+check column_types_as_dbt1 "lines differing from dbt-athena 1.11" "$(grep -oE '(COL [^ ]+ [^ ]+ dtype=.* is_string=[A-Za-z]+|CAST-OK [a-z_]+)' "$DBT2/logs/types_probe.log" | sed 's/is_string=True/is_string=true/; s/is_string=False/is_string=false/' | diff - "$DBT2/project/expected/column_types_dbt1.txt" | grep -c '^[<>]')" 0
 step sync_ice_1 ok -- run --full-refresh --select lab_sync_ice
 step sync_ice_2 ok -- run --select lab_sync_ice --vars '{lab_sync_step: 2}'
 step sync_ice_3 ok -- run --select lab_sync_ice --vars '{lab_sync_step: 3}'
 check sync_ice_glue "lab_sync_ice columns in Glue (name:current)" "$(aws glue get-table --database-name $DB --name lab_sync_ice --output json | jq -r '[.Table.StorageDescriptor.Columns[] | "\(.Name):\(.Parameters["iceberg.field.current"])"] | join(" ")')" "order_id:true status:true extra:false"
 step sync_ice_probe ok -- run-operation lab_column_types --args '{names: [lab_sync_ice]}'
-check sync_ice_columns "lab_sync_ice columns dbt reads" "$(grep -oE 'COL lab_sync_ice [a-z_]+' "$LAB/logs/sync_ice_probe.log" | cut -d' ' -f3 | xargs)" "order_id status"
+check sync_ice_columns "lab_sync_ice columns dbt reads" "$(grep -oE 'COL lab_sync_ice [a-z_]+' "$DBT2/logs/sync_ice_probe.log" | cut -d' ' -f3 | xargs)" "order_id status"
 step mixed_case_1 ok -- run --full-refresh --select lab_mixed_case
 step mixed_case_2 ok -- run --select lab_mixed_case
 check mixed_case_append "Lab_Mixed_Case rows after two appends" "$(athena_scalar "select count(*) from $DB.lab_mixed_case")" 198
 step union ok -- run --select lab_types_subset lab_union
 check union_relations "lab_union rows, nulls cast for the subset" "$(athena_scalar "select cast(count(*) as varchar) || '/' || cast(count_if(a is null) as varchar) from $DB.lab_union")" "2/1"
 step glue_alias_catalog ok -- run-operation lab_columns_in --args "{database: $LAB_CATALOG_GLUE_ALIAS, name: lab_types_subset}"
-check glue_alias_catalog "columns through a Glue catalog registered in Athena" "$(grep -oE "COL $LAB_CATALOG_GLUE_ALIAS lab_types_subset [a-z]+ dtype=[a-z]+" "$LAB/logs/glue_alias_catalog.log" | cut -d' ' -f4- | xargs)" "s dtype=string i dtype=int"
+check glue_alias_catalog "columns through a Glue catalog registered in Athena" "$(grep -oE "COL $LAB_CATALOG_GLUE_ALIAS lab_types_subset [a-z]+ dtype=[a-z]+" "$DBT2/logs/glue_alias_catalog.log" | cut -d' ' -f4- | xargs)" "s dtype=string i dtype=int"
 step non_glue_catalog "fail:LambdaFunction" -- run-operation lab_columns_in --args "{database: $LAB_CATALOG_NON_GLUE, name: anything}"
 
 # --- metadata reads: relations, columns and schemas come from Glue; information_schema is read only
 #     by the catalog query of `compile --write-catalog` (athena__get_catalog_relations)
-check metadata_from_glue "information_schema queries since the start: tables columns schemata (catalog apart)" "$(CENSUS_SKIP_CATALOG=$LAB_CATALOG_NON_GLUE "$LAB/venv/bin/python" "$LAB/census.py" "$WG" "$MATRIX_START" | cut -d' ' -f1-3)" "0 0 0"
+check metadata_from_glue "information_schema queries since the start: tables columns schemata (catalog apart)" "$(CENSUS_SKIP_CATALOG=$LAB_CATALOG_NON_GLUE "$DBT2/venv/bin/python" "$DBT2/census.py" "$WG" "$MATRIX_START" | cut -d' ' -f1-3)" "0 0 0"
 
 echo; echo "PASS $(grep -c '^PASS' "$RES")  FAIL $(grep -c '^FAIL' "$RES")"

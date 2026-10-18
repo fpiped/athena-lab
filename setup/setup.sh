@@ -29,7 +29,7 @@ PY
 role() {
   if aws iam get-role --role-name "$1" >/dev/null 2>&1; then say "role $1 exists"; return; fi
   aws iam create-role --role-name "$1" --assume-role-policy-document "$(render "$IAM/$2")" \
-    --description "dbt2-athena-lab ($LAB_PREFIX)" >/dev/null
+    --description "athena-lab ($LAB_PREFIX)" >/dev/null
   [[ -n ${3:-} ]] && aws iam put-role-policy --role-name "$1" --policy-name lab --policy-document "$(render "$IAM/$3")"
   say "role $1 created"
   NEW_ROLE=1
@@ -41,14 +41,14 @@ work_group() {
   local config="EnforceWorkGroupConfiguration=$2,PublishCloudWatchMetricsEnabled=false,ResultConfiguration={OutputLocation=$LAB_S3_ROOT/$3/}"
   [[ -n ${4:-} ]] && config="$config,EngineVersion={SelectedEngineVersion=$4}"
   [[ -n ${5:-} ]] && config="$config,ExecutionRole=$5"
-  aws athena create-work-group --name "$1" --configuration "$config" --description "dbt2-athena-lab ($LAB_PREFIX)"
+  aws athena create-work-group --name "$1" --configuration "$config" --description "athena-lab ($LAB_PREFIX)"
   say "work group $1 created"
 }
 
 # data_catalog <name> <type> <parameters>
 data_catalog() {
   if aws athena get-data-catalog --name "$1" >/dev/null 2>&1; then say "data catalog $1 exists"; return; fi
-  aws athena create-data-catalog --name "$1" --type "$2" --parameters "$3" --description "dbt2-athena-lab ($LAB_PREFIX)"
+  aws athena create-data-catalog --name "$1" --type "$2" --parameters "$3" --description "athena-lab ($LAB_PREFIX)"
   say "data catalog $1 created"
 }
 
