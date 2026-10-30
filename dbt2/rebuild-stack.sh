@@ -55,8 +55,8 @@ keep_theirs = r"<<<<<<< [^\n]*\n.*?=======\n(.*?)>>>>>>> [^\n]*\n"
 keep_ours = r"<<<<<<< [^\n]*\n(.*?)=======\n.*?>>>>>>> [^\n]*\n"
 for f in files:
     p = pathlib.Path(f); s = p.read_text()
-    if f.endswith("relation/mod.rs"):
-        # union of both export lists
+    if f.endswith(("relation/mod.rs", "profile-schemas/src/headless.rs")):
+        # union of both export or import lists
         def union(m):
             names = set()
             for side in (m.group(1), m.group(2)):
@@ -64,7 +64,14 @@ for f in files:
             return "    " + ", ".join(sorted(names, key=str.lower)) + ",\n"
         s = re.sub(r"<<<<<<< [^\n]*\n(.*?)=======\n(.*?)>>>>>>> [^\n]*\n", union, s, flags=re.S)
     elif part == "16374":
-        s = re.sub(keep_theirs, r"\1", s, flags=re.S)   # Part 5's metadata adapter over Part 2's stubs
+        # Part 5's metadata adapter over Part 2's stubs, keeping the ClickHouse arm main added to
+        # list_relations (Part 5 predates it and lists ClickHouse in the fallback arm)
+        def part5(m):
+            ours, theirs = m.group(1), m.group(2)
+            if "Impl(ClickHouse, engine) =>" in ours:
+                return ours[:ours.index("            Impl(\n")] + theirs.replace("ClickHouse | ", "")
+            return theirs
+        s = re.sub(r"<<<<<<< [^\n]*\n(.*?)=======\n(.*?)>>>>>>> [^\n]*\n", part5, s, flags=re.S)
     elif part == "16375":
         s = re.sub(keep_ours, r"\1", s, flags=re.S)     # Part 1's profile schema over Part 9's copy
     elif part == "16376" and f.endswith(("adapter/adapter_impl.rs", "metadata/get_relation.rs")):
@@ -85,11 +92,35 @@ for entry in "${PARTS[@]}"; do
   if ! git -C "$DBT2/stack" -c commit.gpgsign=false merge -q --no-edit "$ref" >/dev/null 2>&1; then (cd "$DBT2/stack" && resolve "$n"); fi
   echo "merged $n ($ref)"
 done
-# Bench patch for a part that no longer compiles against main; drop it once the part is rebased.
+# Bench patches for a part that no longer compiles against main; drop them once the part is rebased.
 # 16374 (Part 5): main added `state: Option<&State>` to `list_relations`; the other adapters pass None.
 sed -i.bak 's/adapter.list_relations(&query_ctx, conn, db_schema, token_clone.clone())/adapter.list_relations(None, \&query_ctx, conn, db_schema, token_clone.clone())/' \
   "$DBT2/stack/crates/dbt-adapter/src/metadata/athena/mod.rs" && rm -f "$DBT2/stack/crates/dbt-adapter/src/metadata/athena/mod.rs.bak"
-git -C "$DBT2/stack" -c commit.gpgsign=false commit -q -am "bench patch: 16374 list_relations takes state" || true
+# 16374: main passes a ConnectionGuard (conn.as_mut() for the engine) where Part 5 takes &mut dyn Connection.
+python3 - "$DBT2/stack/crates/dbt-adapter/src/metadata" <<'PY'
+import pathlib, sys
+root = pathlib.Path(sys.argv[1])
+patches = {
+    "athena/mod.rs": [
+        ("use crate::connection::AdapterConnectionFactory;", "use crate::connection::{AdapterConnectionFactory, ConnectionGuard};", 1),
+        ("move |conn: &'_ mut dyn Connection,", "move |conn: &mut ConnectionGuard<'_>,", 2),
+        ("    conn: &'_ mut dyn Connection,", "    conn: &mut ConnectionGuard<'_>,", 1),
+        ("engine.execute(None, conn, ctx, &sql, token)", "engine.execute(None, conn.as_mut(), ctx, &sql, token)", 1),
+    ],
+    "get_relation.rs": [
+        ("    conn: &mut dyn Connection,", "    conn: &mut ConnectionGuard<'_>,", 1),
+        (".execute(Some(state), conn, ctx, &sql, token)", ".execute(Some(state), conn.as_mut(), ctx, &sql, token)", 1),
+    ],
+}
+for name, edits in patches.items():
+    p = root / name; s = p.read_text()
+    for old, new, count in edits:
+        if s.count(old) != count:
+            sys.exit(f"bench patch: expected {count} of {old!r} in {name}, found {s.count(old)}")
+        s = s.replace(old, new)
+    p.write_text(s)
+PY
+git -C "$DBT2/stack" -c commit.gpgsign=false commit -q -am "bench patch: 16374 list_relations takes state, connections are guards" || true
 if grep -rn --include='*.rs' 'todo!("Athena")' "$DBT2/stack/crates" >/dev/null; then echo "todo!(Athena) left"; exit 1; fi
 if grep -rln '^<<<<<<< ' "$DBT2/stack/crates" >/dev/null; then echo "conflict markers left"; exit 1; fi
 
