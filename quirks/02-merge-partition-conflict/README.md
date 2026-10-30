@@ -19,10 +19,10 @@ round). 6 rounds (48 statements) for each `ON` clause:
 
 `PARTS` and `ROUNDS` override the counts.
 
-**Result** (Athena engine version 3, runs on 2026-10-18 and 2026-10-20): REPRODUCED in every run.
+**Result** (Athena engine version 3, four runs from 2026-10-18 to 2026-10-30): REPRODUCED in every run.
 
 - without a partition predicate: 42/48 failed in every run (each round exactly one MERGE committed);
-- `t.part = s.part`: 5/48 to 6/48 failed; `t.part = '<literal>'`: 6/48 to 7/48.
+- `t.part = s.part`: 4/48 to 6/48 failed; `t.part = '<literal>'`: 6/48 to 7/48.
 
 Every failure: `ICEBERG_COMMIT_ERROR: Failed to commit Iceberg update to table: <db>.target`. The
 partition predicate cuts the failures but does not remove them.

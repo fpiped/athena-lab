@@ -23,7 +23,7 @@ generates the statements:
 
 `MAXC` and `ROWS` override the width and row count.
 
-**Result** (Athena engine version 3, three runs on 2026-10-18 and 2026-10-20, same outcome): REPRODUCED.
+**Result** (Athena engine version 3, four runs from 2026-10-18 to 2026-10-30, same outcome): REPRODUCED.
 
 - a: works at 137 columns, fails at 143:
   `GENERIC_INTERNAL_ERROR: io.airlift.bytecode.CompilationException: Error compiling class: io/trino/$gen/JoinFilterFunction_<id>`.

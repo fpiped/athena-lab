@@ -19,8 +19,8 @@ such. Data is synthetic; each quirk drops its tables and S3 objects at the end.
 | [`10-type-dialects`](10-type-dialects/README.md) | DDL takes Hive type names, DML returns Trino names |
 
 Every quirk reproduced on Athena engine version 3 in eu-west-1, in one run on 2026-10-18 and two on
-2026-10-20, with the same outcome in each; the concurrency counts of 02 and 03 vary within the ranges
-their READMEs give. Each README holds the exact errors.
+2026-10-20 (01 to 04 also on 2026-10-30), with the same outcome in each; the concurrency counts of
+02 and 03 vary within the ranges their READMEs give. Each README holds the exact errors.
 
 ## Running
 

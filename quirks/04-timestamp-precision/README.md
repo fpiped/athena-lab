@@ -15,7 +15,7 @@ then `typeof`, `information_schema.columns`, `DESCRIBE`, the stored value, `UNLO
 through it), a view with `CAST(ts AS timestamp(6))`, and a Parquet Hive CTAS (on the open work group:
 the enforcing one rejects `external_location`).
 
-**Result** (Athena engine version 3, three runs on 2026-10-18 and 2026-10-20, same outcome): REPRODUCED.
+**Result** (Athena engine version 3, four runs from 2026-10-18 to 2026-10-30, same outcome): REPRODUCED.
 
 - `typeof` and `information_schema`: `timestamp(6)`; `DESCRIBE`: `timestamp`. Microseconds kept:
   `2024-01-02 03:04:05.123456`.

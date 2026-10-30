@@ -15,9 +15,9 @@ which has no `commit.retry.*`.
 ('table_type'='ICEBERG', 'commit.retry.num-retries'='10')` and `ALTER TABLE ... SET TBLPROPERTIES`
 with `commit.retry.*`.
 
-**Result** (Athena engine version 3, runs on 2026-10-18 and 2026-10-20): REPRODUCED in every run.
+**Result** (Athena engine version 3, four runs from 2026-10-18 to 2026-10-30): REPRODUCED in every run.
 
-- a: 12/48 to 17/48 INSERTs failed; the rows of the failed ones are absent. Error, table name empty:
+- a: 12/48 to 19/48 INSERTs failed; the rows of the failed ones are absent. Error, table name empty:
   `ICEBERG_COMMIT_ERROR: Failed to commit Iceberg update to the table: . If a data manifest file was generated at '<result location>-manifest.csv', you may need to manually clean the data from locations specified in the manifest. Athena will not delete data in your account.`
   MERGE conflicts (quirk 02) name the table (`... to table: <db>.<table>`).
 - b: both statements fail with `Unsupported table property key: commit.retry.num-retries`.
