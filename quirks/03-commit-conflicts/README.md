@@ -1,6 +1,6 @@
 # 03 commit-conflicts
 
-**Claim.** Concurrent INSERTs into one Iceberg table fail on commit instead of retrying, the error
+**Claim.** Concurrent INSERTs into one Iceberg table fail on commit, the error
 names no table, and the Iceberg properties that raise the retries cannot be set.
 
 **Documented.** Appends do not conflict in Iceberg; a commit that loses the race is retried

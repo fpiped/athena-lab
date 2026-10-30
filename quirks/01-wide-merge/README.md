@@ -1,8 +1,8 @@
 # 01 wide-merge
 
-**Claim.** Wide statements fail on the size of the code Trino generates: the changed-rows join of a
-dbt `check` snapshot (an `OR` of per-column comparisons) and a MERGE that updates every column of a
-wide Iceberg table.
+**Claim.** Wide statements fail: the changed-rows join of a dbt `check` snapshot (an `OR` of
+per-column comparisons) while compiling its generated code, and a MERGE that updates every column of a
+wide Iceberg table with an internal error that names no cause.
 
 **Documented.** No column limit is documented for joins or MERGE. Trino compiles each filter and
 projection into one JVM method, capped at 64 KB of bytecode

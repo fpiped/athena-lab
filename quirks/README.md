@@ -7,10 +7,10 @@ such. Data is synthetic; each quirk drops its tables and S3 objects at the end.
 
 | Quirk | Claim |
 |---|---|
-| [`01-wide-merge`](01-wide-merge/README.md) | wide check-snapshot joins and wide MERGEs fail |
-| [`02-merge-partition-conflict`](02-merge-partition-conflict/README.md) | concurrent MERGEs into disjoint partitions conflict without a partition predicate in `ON` |
+| [`01-wide-merge`](01-wide-merge/README.md) | wide check-snapshot joins and wide MERGEs fail with internal errors |
+| [`02-merge-partition-conflict`](02-merge-partition-conflict/README.md) | concurrent MERGEs into disjoint partitions fail on commit, also with the partition in `ON` |
 | [`03-commit-conflicts`](03-commit-conflicts/README.md) | concurrent INSERTs fail on commit; `commit.retry.*` cannot be set |
-| [`04-timestamp-precision`](04-timestamp-precision/README.md) | Iceberg timestamps are `timestamp(6)`, which UNLOAD, Hive CTAS and views reject |
+| [`04-timestamp-precision`](04-timestamp-precision/README.md) | Iceberg timestamps are `timestamp(6)`, against the documented milliseconds; UNLOAD and Hive CTAS fail on them |
 
 Every quirk reproduced on Athena engine version 3 in eu-west-1, in four runs from 2026-10-18 to
 2026-10-30, with the same outcome in each; the concurrency counts of 02 and 03 vary within the ranges

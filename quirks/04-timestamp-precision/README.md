@@ -1,7 +1,8 @@
 # 04 timestamp-precision
 
 **Claim.** An Iceberg `timestamp` column is `timestamp(6)` in Athena, against the documented
-millisecond precision, and the `(6)` makes UNLOAD to Parquet, Hive CTAS and views that expose it fail.
+millisecond precision: UNLOAD to Parquet and Hive CTAS fail on it, and a view reports it as
+`timestamp(3)`.
 
 **Documented.** `TIMESTAMP`: "A calendar date and time of day with millisecond precision";
 "`TIMESTAMP(3)` is equivalent to `TIMESTAMP`"

@@ -1,6 +1,6 @@
 # 02 merge-partition-conflict
 
-**Claim.** Concurrent MERGEs into disjoint partitions of one Iceberg table fail on commit unless the
+**Claim.** Concurrent MERGEs into disjoint partitions of one Iceberg table fail on commit, also when the
 `ON` clause restricts the partition column.
 
 **Documented.** Iceberg checks a concurrent commit against the files the operation read
