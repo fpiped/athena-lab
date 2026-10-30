@@ -11,21 +11,15 @@ such. Data is synthetic; each quirk drops its tables and S3 objects at the end.
 | [`02-merge-partition-conflict`](02-merge-partition-conflict/README.md) | concurrent MERGEs into disjoint partitions conflict without a partition predicate in `ON` |
 | [`03-commit-conflicts`](03-commit-conflicts/README.md) | concurrent INSERTs fail on commit; `commit.retry.*` cannot be set |
 | [`04-timestamp-precision`](04-timestamp-precision/README.md) | Iceberg timestamps are `timestamp(6)`, which UNLOAD, Hive CTAS and views reject |
-| [`05-unload-parquet`](05-unload-parquet/README.md) | UNLOAD writes INT96 timestamps and lowercases field names |
-| [`06-workgroup-output-location`](06-workgroup-output-location/README.md) | an enforcing work group overrides a requested output location without a signal |
-| [`07-udf-ctas`](07-udf-ctas/README.md) | a CTE cannot precede `USING EXTERNAL FUNCTION` |
-| [`08-nested-type-change`](08-nested-type-change/README.md) | `CHANGE COLUMN` cannot widen a nested field with the full type |
-| [`09-glue-stale-columns`](09-glue-stale-columns/README.md) | Glue keeps an Iceberg column after `DROP COLUMN` |
-| [`10-type-dialects`](10-type-dialects/README.md) | DDL takes Hive type names, DML returns Trino names |
 
-Every quirk reproduced on Athena engine version 3 in eu-west-1, in one run on 2026-10-18 and two on
-2026-10-20 (01 to 04 also on 2026-10-30), with the same outcome in each; the concurrency counts of
-02 and 03 vary within the ranges their READMEs give. Each README holds the exact errors.
+Every quirk reproduced on Athena engine version 3 in eu-west-1, in four runs from 2026-10-18 to
+2026-10-30, with the same outcome in each; the concurrency counts of 02 and 03 vary within the ranges
+their READMEs give. Each README holds the exact errors.
 
 ## Running
 
-Requirements: the root setup (`setup/setup.sh`: the work groups), `jq`, Python 3; `05` also needs `uv`
-(it creates `quirks/venv/` with pyarrow and boto3); `07` needs the lab UDF function (`LAB_UDF=1`).
+Requirements: the root setup (`setup/setup.sh`: the work groups), `jq`, Python 3 (`01` generates its
+SQL with it).
 
 ```sh
 quirks/04-timestamp-precision/run.sh   # one quirk
