@@ -92,35 +92,6 @@ for entry in "${PARTS[@]}"; do
   if ! git -C "$DBT2/stack" -c commit.gpgsign=false merge -q --no-edit "$ref" >/dev/null 2>&1; then (cd "$DBT2/stack" && resolve "$n"); fi
   echo "merged $n ($ref)"
 done
-# Bench patches for a part that no longer compiles against main; drop them once the part is rebased.
-# 16374 (Part 5): main added `state: Option<&State>` to `list_relations`; the other adapters pass None.
-sed -i.bak 's/adapter.list_relations(&query_ctx, conn, db_schema, token_clone.clone())/adapter.list_relations(None, \&query_ctx, conn, db_schema, token_clone.clone())/' \
-  "$DBT2/stack/crates/dbt-adapter/src/metadata/athena/mod.rs" && rm -f "$DBT2/stack/crates/dbt-adapter/src/metadata/athena/mod.rs.bak"
-# 16374: main passes a ConnectionGuard (conn.as_mut() for the engine) where Part 5 takes &mut dyn Connection.
-python3 - "$DBT2/stack/crates/dbt-adapter/src/metadata" <<'PY'
-import pathlib, sys
-root = pathlib.Path(sys.argv[1])
-patches = {
-    "athena/mod.rs": [
-        ("use crate::connection::AdapterConnectionFactory;", "use crate::connection::{AdapterConnectionFactory, ConnectionGuard};", 1),
-        ("move |conn: &'_ mut dyn Connection,", "move |conn: &mut ConnectionGuard<'_>,", 2),
-        ("    conn: &'_ mut dyn Connection,", "    conn: &mut ConnectionGuard<'_>,", 1),
-        ("engine.execute(None, conn, ctx, &sql, token)", "engine.execute(None, conn.as_mut(), ctx, &sql, token)", 1),
-    ],
-    "get_relation.rs": [
-        ("    conn: &mut dyn Connection,", "    conn: &mut ConnectionGuard<'_>,", 1),
-        (".execute(Some(state), conn, ctx, &sql, token)", ".execute(Some(state), conn.as_mut(), ctx, &sql, token)", 1),
-    ],
-}
-for name, edits in patches.items():
-    p = root / name; s = p.read_text()
-    for old, new, count in edits:
-        if s.count(old) != count:
-            sys.exit(f"bench patch: expected {count} of {old!r} in {name}, found {s.count(old)}")
-        s = s.replace(old, new)
-    p.write_text(s)
-PY
-git -C "$DBT2/stack" -c commit.gpgsign=false commit -q -am "bench patch: 16374 list_relations takes state, connections are guards" || true
 if grep -rn --include='*.rs' 'todo!("Athena")' "$DBT2/stack/crates" >/dev/null; then echo "todo!(Athena) left"; exit 1; fi
 if grep -rln '^<<<<<<< ' "$DBT2/stack/crates" >/dev/null; then echo "conflict markers left"; exit 1; fi
 
